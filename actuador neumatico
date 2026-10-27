@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Actuador Neumático - Exposición</title>
+<style>
+  body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #12141a; }
+  
+  /* Panel de Control PLC */
+  #ui { position: absolute; top: 20px; left: 20px; z-index: 100; display: flex; flex-direction: column; gap: 12px; background: rgba(15, 20, 25, 0.9); padding: 20px; border-radius: 10px; border: 1px solid #334; box-shadow: 0 8px 25px rgba(0,0,0,0.6); backdrop-filter: blur(8px); }
+  .row { display: flex; gap: 10px; }
+  button { padding: 12px 16px; background: #232732; color: #e0e0e0; border: 1px solid #445; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s; flex: 1; text-transform: uppercase; letter-spacing: 0.5px; }
+  button:hover { background: #2e3442; border-color: #667; }
+  button.active { background: #0055ff; border-color: #3377ff; color: #fff; box-shadow: 0 0 12px rgba(0,85,255,0.5); }
+  h3 { color: #88aaff; margin: 0 0 5px 0; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #334; padding-bottom: 8px;}
+
+  /* Estilos de las Etiquetas 3D */
+  .label-3d {
+    background: rgba(20, 25, 35, 0.85);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    border-left: 3px solid #00aaff;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    pointer-events: none;
+    transform: translateY(-10px);
+  }
+  .label-piston {
+    border-left: 3px solid #ffaa00;
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <h3>Panel de Control (PLC)</h3>
+  <div class="row">
+    <button id="btnExtend">Extender (A+)</button>
+    <button id="btnRetract">Retraer (B+)</button>
+  </div>
+  <div class="row">
+    <button id="btnAuto" class="active">Ciclo Automático</button>
+  </div>
+  <div class="row" style="margin-top: 5px;">
+    <button id="btnCutaway">Vista de Sección</button>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+// ================== ESCENA BASE ==================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x12141a);
+scene.fog = new THREE.Fog(0x12141a, 25, 60);
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(10, 7, 14);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+renderer.localClippingEnabled = true;
+document.body.appendChild(renderer.domElement);
+
+// Renderizador para las etiquetas HTML
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+labelRenderer.domElement.style.position = 'absolute';
+labelRenderer.domElement.style.top = '0';
+labelRenderer.domElement.style.left = '0';
+labelRenderer.domElement.style.pointerEvents = 'none';
+document.body.appendChild(labelRenderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.target.set(0, 0, 0);
+controls.maxPolarAngle = Math.PI / 2 + 0.1;
+
+// ================== ILUMINACIÓN ==================
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const mainLight = new THREE.DirectionalLight(0xffffff, 2.5);
+mainLight.position.set(8, 12, 8);
+mainLight.castShadow = true;
+mainLight.shadow.mapSize.set(2048, 2048);
+scene.add(mainLight);
+
+const rimLight = new THREE.DirectionalLight(0x88aaff, 1.5);
+rimLight.position.set(-8, 5, -8);
+scene.add(rimLight);
+
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(100, 100),
+  new THREE.MeshStandardMaterial({ color: 0x12141a, roughness: 0.9 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -2.0;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// ================== MATERIALES ==================
+const matAlu = new THREE.MeshPhysicalMaterial({ color: 0xdddddd, metalness: 0.8, roughness: 0.3, clearcoat: 1.0 });
+const matChrome = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 1.0, roughness: 0.05, clearcoat: 1.0 });
+const matDark = new THREE.MeshStandardMaterial({ color: 0x1a1a1f, metalness: 0.7, roughness: 0.6 });
+const matBrass = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.9, roughness: 0.2 });
+const matRubber = new THREE.MeshStandardMaterial({ color: 0x0a0a0c, metalness: 0.1, roughness: 0.9 });
+const matHose = new THREE.MeshPhysicalMaterial({ color: 0x0055cc, metalness: 0.1, roughness: 0.7, clearcoat: 0.5 });
+
+const clipPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const clippableMats = [matAlu, matDark, matBrass, matRubber];
+
+// ================== FUNCIÓN PARA CREAR ETIQUETAS ==================
+function createLabel(text, isPiston = false) {
+  const div = document.createElement('div');
+  div.className = isPiston ? 'label-3d label-piston' : 'label-3d';
+  div.textContent = text;
+  return new CSS2DObject(div);
+}
+
+// ================== CONSTRUCCIÓN DEL CILINDRO ==================
+const cylinderGroup = new THREE.Group();
+scene.add(cylinderGroup);
+
+// 1. Camisa (Cuerpo)
+const outerBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 4.0, 48), matAlu);
+outerBarrel.rotation.z = Math.PI / 2;
+outerBarrel.castShadow = true; outerBarrel.receiveShadow = true;
+outerBarrel.material.clippingPlanes = [clipPlane];
+cylinderGroup.add(outerBarrel);
+
+const innerBarrel = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.75, 0.75, 4.0, 48),
+  new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.9, roughness: 0.4, side: THREE.BackSide, clippingPlanes: [clipPlane] })
+);
+innerBarrel.rotation.z = Math.PI / 2;
+cylinderGroup.add(innerBarrel);
+
+// Etiqueta Camisa
+const lblCamisa = createLabel('Cuerpo / Camisa');
+lblCamisa.position.set(0, 1.2, 0);
+cylinderGroup.add(lblCamisa);
+
+// 2. Tapas
+const capGeo = new THREE.BoxGeometry(0.5, 2.1, 2.1);
+const capFront = new THREE.Mesh(capGeo, matAlu);
+capFront.position.set(2.25, 0, 0);
+capFront.castShadow = true; capFront.receiveShadow = true;
+capFront.material.clippingPlanes = [clipPlane];
+cylinderGroup.add(capFront);
+
+const capBack = new THREE.Mesh(capGeo, matAlu);
+capBack.position.set(-2.25, 0, 0);
+capBack.castShadow = true; capBack.receiveShadow = true;
+capBack.material.clippingPlanes = [clipPlane];
+cylinderGroup.add(capBack);
+
+// Etiquetas Tapas
+const lblTapaF = createLabel('Tapa Frontal');
+lblTapaF.position.set(2.25, -1.2, 0);
+cylinderGroup.add(lblTapaF);
+
+const lblTapaT = createLabel('Tapa Trasera');
+lblTapaT.position.set(-2.25, -1.2, 0);
+cylinderGroup.add(lblTapaT);
+
+// 3. Tirantes
+const tieRodGeo = new THREE.CylinderGeometry(0.06, 0.06, 4.6, 12);
+[[0.8, 0.8], [0.8, -0.8], [-0.8, 0.8], [-0.8, -0.8]].forEach((pos, index) => {
+  const rod = new THREE.Mesh(tieRodGeo, matDark);
+  rod.rotation.z = Math.PI / 2;
+  rod.position.set(0, pos[0], pos[1]);
+  rod.castShadow = true;
+  rod.material.clippingPlanes = [clipPlane];
+  cylinderGroup.add(rod);
+
+  const nutGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.15, 6);
+  const nut1 = new THREE.Mesh(nutGeo, matDark);
+  nut1.rotation.z = Math.PI / 2;
+  nut1.position.set(2.5, pos[0], pos[1]);
+  nut1.material.clippingPlanes = [clipPlane];
+  cylinderGroup.add(nut1);
+  
+  const nut2 = new THREE.Mesh(nutGeo, matDark);
+  nut2.rotation.z = Math.PI / 2;
+  nut2.position.set(-2.5, pos[0], pos[1]);
+  nut2.material.clippingPlanes = [clipPlane];
+  cylinderGroup.add(nut2);
+
+  // Etiqueta solo para un tirante
+  if (index === 0) {
+    const lblTirante = createLabel('Tirantes');
+    lblTirante.position.set(1.8, pos[0], pos[1]);
+    cylinderGroup.add(lblTirante);
+  }
+});
+
+// ================== CONJUNTO MÓVIL (Pistón + Vástago) ==================
+const movingAssembly = new THREE.Group();
+cylinderGroup.add(movingAssembly);
+
+// Pistón
+const piston = new THREE.Mesh(new THREE.CylinderGeometry(0.74, 0.74, 0.4, 32), matDark);
+piston.rotation.z = Math.PI / 2;
+piston.material.clippingPlanes = [clipPlane];
+piston.castShadow = true;
+movingAssembly.add(piston);
+
+// Sello
+const pistonSeal = new THREE.Mesh(new THREE.TorusGeometry(0.74, 0.04, 12, 32), matRubber);
+pistonSeal.rotation.y = Math.PI / 2;
+pistonSeal.material.clippingPlanes = [clipPlane];
+movingAssembly.add(pistonSeal);
+
+// Etiqueta Pistón (Se mueve con él)
+const lblPiston = createLabel('Pistón / Émbolo', true);
+lblPiston.position.set(0, 0.8, 0);
+movingAssembly.add(lblPiston);
+
+// Vástago
+const rodLength = 5.5;
+const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, rodLength, 32), matChrome);
+rod.rotation.z = Math.PI / 2;
+rod.position.x = rodLength / 2;
+rod.castShadow = true;
+movingAssembly.add(rod);
+
+// Etiqueta Vástago (Se mueve con él)
+const lblVastago = createLabel('Vástago');
+lblVastago.position.set(rodLength - 0.5, -0.4, 0);
+movingAssembly.add(lblVastago);
+
+// Punta del vástago
+const rodTip = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.8, 16), matChrome);
+rodTip.rotation.z = Math.PI / 2;
+rodTip.position.x = rodLength + 0.4;
+rodTip.castShadow = true;
+movingAssembly.add(rodTip);
+
+const rodNut = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.2, 6), matDark);
+rodNut.rotation.z = Math.PI / 2;
+rodNut.position.x = rodLength + 0.5;
+movingAssembly.add(rodNut);
+
+// Junta Rascadora
+const wiper = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.05, 12, 32), matBrass);
+wiper.rotation.y = Math.PI / 2;
+wiper.position.set(2.05, 0, 0);
+wiper.material.clippingPlanes = [clipPlane];
+cylinderGroup.add(wiper);
+
+// ================== RACORES Y MANGUERAS ==================
+function createHose(isBack) {
+  const group = new THREE.Group();
+  const dir = isBack ? -1 : 1;
+  group.position.set(dir * 2.1, 0.8, 0);
+
+  const fitting = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.3, 16), matBrass);
+  fitting.position.y = 0.15;
+  group.add(fitting);
+
+  const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 16), matBrass);
+  elbow.position.y = 0.3;
+  group.add(elbow);
+
+  const curve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0.3, 0),
+    new THREE.Vector3(0, 1.2, 0),
+    new THREE.Vector3(dir * 0.8, 2.2, 0.5),
+    new THREE.Vector3(dir * 1.5, 2.8, 1.5)
+  ]);
+  const hose = new THREE.Mesh(new THREE.TubeGeometry(curve, 32, 0.08, 12, false), matHose);
+  group.add(hose);
+
+  // Etiqueta para la manguera delantera
+  if (!isBack) {
+    const lblHose = createLabel('Mangueras Neumáticas');
+    lblHose.position.set(0.5, 1.5, 0.8);
+    group.add(lblHose);
+  }
+
+  return group;
+}
+cylinderGroup.add(createHose(true));
+cylinderGroup.add(createHose(false));
+
+// ================== SENSORES Y SOPORTES ==================
+let ledMat1, ledMat2;
+function createSensor(x) {
+  const sensor = new THREE.Group();
+  sensor.position.set(x, 0.88, 0.4);
+  
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.15, 0.2), matDark);
+  body.material.clippingPlanes = [clipPlane];
+  sensor.add(body);
+
+  const ledMat = new THREE.MeshBasicMaterial({ color: 0x330000 });
+  const led = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 8), ledMat);
+  led.position.set(0, 0.08, 0.08);
+  sensor.add(led);
+
+  if (x < 0) ledMat1 = ledMat; else ledMat2 = ledMat;
+  return sensor;
+}
+cylinderGroup.add(createSensor(-1.6));
+cylinderGroup.add(createSensor(1.6));
+
+const lblSensor = createLabel('Sensores Magnéticos');
+lblSensor.position.set(-1.6, 1.2, 0.4);
+cylinderGroup.add(lblSensor);
+
+const mountGeo = new THREE.BoxGeometry(1.2, 0.3, 2.4);
+[-1.4, 1.4].forEach(x => {
+  const mount = new THREE.Mesh(mountGeo, matDark);
+  mount.position.set(x, -1.1, 0);
+  mount.castShadow = true; mount.receiveShadow = true;
+  mount.material.clippingPlanes = [clipPlane];
+  cylinderGroup.add(mount);
+});
+
+// ================== LÓGICA DE ANIMACIÓN ==================
+const strokeStart = -1.7;
+const strokeEnd = 1.7;
+let currentPos = strokeStart; 
+let isAuto = true;
+let targetPos = strokeEnd;
+let autoTimer = 0;
+
+function updateMechanism() {
+  movingAssembly.position.x = currentPos;
+
+  // Luces de los sensores
+  if (currentPos < strokeStart + 0.2) {
+    ledMat1.color.setHex(0xff0000); // Rojo (Retraído)
+  } else {
+    ledMat1.color.setHex(0x330000);
+  }
+  if (currentPos > strokeEnd - 0.2) {
+    ledMat2.color.setHex(0x00ff00); // Verde (Extendido)
+  } else {
+    ledMat2.color.setHex(0x330000);
+  }
+}
+updateMechanism();
+
+// ================== UI INTERACCIÓN ==================
+const btnExtend = document.getElementById('btnExtend');
+const btnRetract = document.getElementById('btnRetract');
+const btnAuto = document.getElementById('btnAuto');
+const btnCutaway = document.getElementById('btnCutaway');
+
+function setMode(mode) {
+  isAuto = (mode === 'auto');
+  btnAuto.classList.toggle('active', isAuto);
+  
+  if (mode === 'extend') { targetPos = strokeEnd; btnExtend.classList.add('active'); btnRetract.classList.remove('active'); }
+  else if (mode === 'retract') { targetPos = strokeStart; btnRetract.classList.add('active'); btnExtend.classList.remove('active'); }
+  else { btnExtend.classList.remove('active'); btnRetract.classList.remove('active'); }
+}
+
+btnExtend.addEventListener('click', () => setMode('extend'));
+btnRetract.addEventListener('click', () => setMode('retract'));
+btnAuto.addEventListener('click', () => setMode('auto'));
+
+let cutawayActive = false;
+btnCutaway.addEventListener('click', (e) => {
+  cutawayActive = !cutawayActive;
+  clippableMats.forEach(m => {
+    m.clippingPlanes = cutawayActive ? [clipPlane] : [];
+    m.needsUpdate = true;
+  });
+  e.target.textContent = cutawayActive ? 'Vista Normal' : 'Vista de Sección';
+});
+
+// ================== LOOP DE ANIMACIÓN ==================
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.1);
+
+  if (isAuto) {
+    autoTimer += dt;
+    if (autoTimer > 2) { 
+      targetPos = (targetPos === strokeEnd) ? strokeStart : strokeEnd;
+      autoTimer = 0;
+    }
+  }
+
+  if (Math.abs(currentPos - targetPos) > 0.01) {
+    currentPos = THREE.MathUtils.lerp(currentPos, targetPos, dt * 8);
+    updateMechanism();
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
